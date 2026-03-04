@@ -181,17 +181,30 @@ backgroundAttachment: "fixed",
   }}
 >        {/* Header */}
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-
-  <div>
-            <div style={{ fontSize: 40, fontWeight: 900, marginLeft: 600 }}>
-              Sistema de Gestão de Chamados
-            </div>
-            <div style={{ fontSize: 20, color: "#dde3ed", marginTop: 0, marginLeft: 640 }}>
-              Gerencie ordens de compra, técnicos e status dos chamados
-            </div>
-          </div>
-        </div>
+        <div
+  style={{
+    marginBottom: 14,
+    display: "flex",
+    alignItems: "center",
+  }}
+>
+  {/* bloco central que ocupa a largura e centraliza de verdade */}
+  <div
+    style={{
+      flex: 1,
+      display: "grid",
+      justifyItems: "center", // centraliza o conteúdo
+      textAlign: "center",
+    }}
+  >
+    <div style={{ fontSize: 40, fontWeight: 900 }}>
+      Sistema de Gestão de Chamados
+    </div>
+    <div style={{ fontSize: 20, color: "#dde3ed" }}>
+      Gerencie ordens de compra, técnicos e status dos chamados
+    </div>
+  </div>
+</div>
 
         {/* Search + Export */}
         <div
@@ -265,7 +278,15 @@ backgroundAttachment: "fixed",
                 gap: 10,
               }}
             >
-              <div style={{ fontWeight: 900, fontSize: 28, marginLeft: 500 }}>Planilha de Chamados</div>
+              <div
+  style={{
+    fontWeight: 900,
+    fontSize: 28,
+    flex: 1,
+    textAlign: "center",
+  }}
+
+>Planilha de Chamados</div>
               <button
                 onClick={addRow}
                 style={{
