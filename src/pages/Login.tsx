@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useAuth } from "../auth";
 import { HttpError } from "../api/client";
+import PasswordInput from "../components/PasswordInput";
 import fundo from "../assets/fundo.jpg";
 import logoNovaEra from "../assets/logo.png";
 import reguaMarcas from "../assets/regua_marcas.png";
@@ -112,10 +113,9 @@ export default function Login() {
 
           <label style={{ display: "grid", gap: 6 }}>
             <span style={{ fontSize: 12, color: "#cbd5e1" }}>Senha</span>
-            <input
-              type="password"
+            <PasswordInput
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
               required
               autoComplete="current-password"
               style={inputStyle}

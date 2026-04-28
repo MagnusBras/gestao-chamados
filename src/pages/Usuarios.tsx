@@ -6,6 +6,7 @@ import {
   type Papel,
 } from "../api/usuarios";
 import { HttpError } from "../api/client";
+import PasswordInput from "../components/PasswordInput";
 
 export default function Usuarios() {
   const { token, user: currentUser } = useAuth();
@@ -192,10 +193,9 @@ export default function Usuarios() {
           />
         </Field>
         <Field label="Senha (mín. 6)">
-          <input
-            type="password"
+          <PasswordInput
             value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
+            onChange={setNewPassword}
             required
             minLength={6}
             style={inputStyle}
@@ -367,10 +367,9 @@ export default function Usuarios() {
               Usuário: <b>{users.find((u) => u.id === resetForId)?.username}</b>
             </div>
             <Field label="Nova senha (mín. 6)">
-              <input
-                type="password"
+              <PasswordInput
                 value={resetPassword}
-                onChange={(e) => setResetPassword(e.target.value)}
+                onChange={setResetPassword}
                 required
                 minLength={6}
                 autoFocus
