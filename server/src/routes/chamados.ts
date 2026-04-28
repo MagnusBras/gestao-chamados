@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import pool from "../db.js";
 import { chamadoSchema } from "../schemas.js";
+import { audit } from "../auditoria.js";
 
 const router = Router();
 
@@ -15,9 +16,11 @@ interface ChamadoRow extends RowDataPacket {
   fornecedor: string | null;
   valor_oc: string | null;
   status: string | null;
+  criado_por: number | null;
+  criado_por_username: string | null;
 }
 
-// Mapeia linha do banco (snake_case) para o formato da API (camelCase)
+// Mapeia linha do banco (snake_case + JOIN) para o formato da API (camelCase)
 function dbRowToChamado(row: ChamadoRow) {
   return {
     id: row.id,
@@ -29,18 +32,28 @@ function dbRowToChamado(row: ChamadoRow) {
     fornecedor: row.fornecedor,
     valorOC: row.valor_oc != null ? Number(row.valor_oc) : null,
     status: row.status,
+    criadoPor: row.criado_por,
+    criadoPorUsername: row.criado_por_username,
   };
 }
 
-const SELECT_COLS =
-  "id, oc, filial, tecnico, numero_chamado, data, fornecedor, valor_oc, status";
+const SELECT_COLS = `
+  c.id, c.oc, c.filial, c.tecnico, c.numero_chamado, c.data, c.fornecedor,
+  c.valor_oc, c.status, c.criado_por,
+  u.username AS criado_por_username
+`.trim();
 
-// GET /api/chamados — lista todos
-router.get("/", async (_req, res) => {
+const FROM_JOIN = "FROM chamados c LEFT JOIN usuarios u ON u.id = c.criado_por";
+
+// GET /api/chamados — lista (admin vê tudo; user só os próprios)
+router.get("/", async (req, res) => {
+  const isAdmin = req.user!.papel === "admin";
   try {
-    const [rows] = await pool.query<ChamadoRow[]>(
-      `SELECT ${SELECT_COLS} FROM chamados ORDER BY id DESC`
-    );
+    const sql = isAdmin
+      ? `SELECT ${SELECT_COLS} ${FROM_JOIN} ORDER BY c.id DESC`
+      : `SELECT ${SELECT_COLS} ${FROM_JOIN} WHERE c.criado_por = ? ORDER BY c.id DESC`;
+    const params = isAdmin ? [] : [req.user!.id];
+    const [rows] = await pool.query<ChamadoRow[]>(sql, params);
     res.json(rows.map(dbRowToChamado));
   } catch (err) {
     console.error("[chamados] GET:", err);
@@ -48,17 +61,19 @@ router.get("/", async (_req, res) => {
   }
 });
 
-// GET /api/chamados/:id — busca um
+// GET /api/chamados/:id — busca um (com check de dono)
 router.get("/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id) || id <= 0) {
     return res.status(400).json({ error: "ID inválido" });
   }
+  const isAdmin = req.user!.papel === "admin";
   try {
-    const [rows] = await pool.query<ChamadoRow[]>(
-      `SELECT ${SELECT_COLS} FROM chamados WHERE id = ?`,
-      [id]
-    );
+    const sql = isAdmin
+      ? `SELECT ${SELECT_COLS} ${FROM_JOIN} WHERE c.id = ?`
+      : `SELECT ${SELECT_COLS} ${FROM_JOIN} WHERE c.id = ? AND c.criado_por = ?`;
+    const params = isAdmin ? [id] : [id, req.user!.id];
+    const [rows] = await pool.query<ChamadoRow[]>(sql, params);
     if (rows.length === 0) {
       return res.status(404).json({ error: "Chamado não encontrado" });
     }
@@ -69,7 +84,7 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// POST /api/chamados — cria um
+// POST /api/chamados — cria (criado_por = usuário logado)
 router.post("/", async (req, res) => {
   const parsed = chamadoSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -81,8 +96,9 @@ router.post("/", async (req, res) => {
   const c = parsed.data;
   try {
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO chamados (oc, filial, tecnico, numero_chamado, data, fornecedor, valor_oc, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO chamados
+        (oc, filial, tecnico, numero_chamado, data, fornecedor, valor_oc, status, criado_por)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         c.oc ?? null,
         c.filial ?? null,
@@ -92,12 +108,18 @@ router.post("/", async (req, res) => {
         c.fornecedor ?? null,
         c.valorOC ?? null,
         c.status ?? null,
+        req.user!.id,
       ]
     );
     const [rows] = await pool.query<ChamadoRow[]>(
-      `SELECT ${SELECT_COLS} FROM chamados WHERE id = ?`,
+      `SELECT ${SELECT_COLS} ${FROM_JOIN} WHERE c.id = ?`,
       [result.insertId]
     );
+    await audit(req, "CHAMADO_CRIAR", {
+      recurso: "chamado",
+      recursoId: result.insertId,
+      detalhes: c,
+    });
     res.status(201).json(dbRowToChamado(rows[0]));
   } catch (err) {
     console.error("[chamados] POST:", err);
@@ -105,7 +127,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-// PATCH /api/chamados/:id — atualiza parcial
+// PATCH /api/chamados/:id — atualiza parcial (com check de dono)
 router.patch("/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id) || id <= 0) {
@@ -119,8 +141,8 @@ router.patch("/:id", async (req, res) => {
     });
   }
   const c = parsed.data;
+  const isAdmin = req.user!.papel === "admin";
 
-  // Mapa camelCase → snake_case
   const fieldMap: Record<string, string> = {
     oc: "oc",
     filial: "filial",
@@ -143,20 +165,32 @@ router.patch("/:id", async (req, res) => {
   if (sets.length === 0) {
     return res.status(400).json({ error: "Nada para atualizar" });
   }
-  values.push(id);
+
+  // Cláusula WHERE com check de dono (admin pula o check)
+  const whereOwner = isAdmin ? "" : " AND criado_por = ?";
+  const updateParams = isAdmin
+    ? [...values, id]
+    : [...values, id, req.user!.id];
 
   try {
     const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE chamados SET ${sets.join(", ")} WHERE id = ?`,
-      values
+      `UPDATE chamados SET ${sets.join(", ")} WHERE id = ?${whereOwner}`,
+      updateParams
     );
     if (result.affectedRows === 0) {
+      // Pode ser que o chamado não exista OU não seja do usuário —
+      // retornamos 404 nos dois casos para não vazar existência.
       return res.status(404).json({ error: "Chamado não encontrado" });
     }
     const [rows] = await pool.query<ChamadoRow[]>(
-      `SELECT ${SELECT_COLS} FROM chamados WHERE id = ?`,
+      `SELECT ${SELECT_COLS} ${FROM_JOIN} WHERE c.id = ?`,
       [id]
     );
+    await audit(req, "CHAMADO_EDITAR", {
+      recurso: "chamado",
+      recursoId: id,
+      detalhes: c,
+    });
     res.json(dbRowToChamado(rows[0]));
   } catch (err) {
     console.error("[chamados] PATCH:", err);
@@ -164,20 +198,28 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-// DELETE /api/chamados/:id — remove
+// DELETE /api/chamados/:id — remove (com check de dono)
 router.delete("/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id) || id <= 0) {
     return res.status(400).json({ error: "ID inválido" });
   }
+  const isAdmin = req.user!.papel === "admin";
+  const whereOwner = isAdmin ? "" : " AND criado_por = ?";
+  const params = isAdmin ? [id] : [id, req.user!.id];
+
   try {
     const [result] = await pool.query<ResultSetHeader>(
-      "DELETE FROM chamados WHERE id = ?",
-      [id]
+      `DELETE FROM chamados WHERE id = ?${whereOwner}`,
+      params
     );
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Chamado não encontrado" });
     }
+    await audit(req, "CHAMADO_EXCLUIR", {
+      recurso: "chamado",
+      recursoId: id,
+    });
     res.status(204).send();
   } catch (err) {
     console.error("[chamados] DELETE:", err);

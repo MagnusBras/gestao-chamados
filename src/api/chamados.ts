@@ -13,6 +13,9 @@ export type ChamadoApi = {
   fornecedor: string | null;
   valorOC: number | null;
   status: Status | null;
+  // Definidos pelo servidor (não enviados em PATCH/POST)
+  criadoPor: number | null;
+  criadoPorUsername: string | null;
 };
 
 export type ChamadoInput = Omit<Partial<ChamadoApi>, "id">;

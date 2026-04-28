@@ -7,6 +7,7 @@ import {
   usuarioUpdateSchema,
   senhaUpdateSchema,
 } from "../schemas.js";
+import { audit } from "../auditoria.js";
 
 const router = Router();
 
@@ -68,6 +69,12 @@ router.post("/", async (req, res) => {
       `SELECT ${SELECT_COLS} FROM usuarios WHERE id = ?`,
       [result.insertId]
     );
+    await audit(req, "USUARIO_CRIAR", {
+      recurso: "usuario",
+      recursoId: result.insertId,
+      // Não logar a senha (mesmo hashed)
+      detalhes: { username, nome, papel },
+    });
     res.status(201).json(rowToUsuario(rows[0]));
   } catch (err: unknown) {
     const e = err as { code?: string };
@@ -133,6 +140,11 @@ router.patch("/:id", async (req, res) => {
       `SELECT ${SELECT_COLS} FROM usuarios WHERE id = ?`,
       [id]
     );
+    await audit(req, "USUARIO_EDITAR", {
+      recurso: "usuario",
+      recursoId: id,
+      detalhes: data,
+    });
     res.json(rowToUsuario(rows[0]));
   } catch (err) {
     console.error("[usuarios] PATCH:", err);
@@ -162,6 +174,11 @@ router.patch("/:id/senha", async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Usuário não encontrado" });
     }
+    await audit(req, "USUARIO_SENHA_REDEFINIR", {
+      recurso: "usuario",
+      recursoId: id,
+      // NÃO logar a senha em si
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error("[usuarios] PATCH senha:", err);
@@ -187,6 +204,10 @@ router.delete("/:id", async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: "Usuário não encontrado" });
     }
+    await audit(req, "USUARIO_EXCLUIR", {
+      recurso: "usuario",
+      recursoId: id,
+    });
     res.status(204).send();
   } catch (err) {
     console.error("[usuarios] DELETE:", err);

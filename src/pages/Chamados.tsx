@@ -33,7 +33,8 @@ function normalizeFromApi(c: ChamadoApi): ChamadoApi {
 }
 
 export default function Chamados() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const isAdmin = user?.papel === "admin";
   const [rows, setRows] = useState<ChamadoApi[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -187,6 +188,7 @@ export default function Chamados() {
         r.fornecedor,
         r.valorOC != null ? String(r.valorOC) : "",
         r.status,
+        r.criadoPorUsername,
       ]
         .map((v) => v ?? "")
         .join(" ")
@@ -383,6 +385,7 @@ export default function Chamados() {
                     "FORNECEDOR",
                     "VALOR OC",
                     "STATUS",
+                    ...(isAdmin ? ["CRIADO POR"] : []),
                     "AÇÕES",
                   ].map((h) => (
                     <th
@@ -519,6 +522,18 @@ export default function Chamados() {
                           <option value="Recusado">Recusado</option>
                         </select>
                       </td>
+                      {isAdmin && (
+                        <td
+                          style={{
+                            padding: 10,
+                            color: "#cbd5e1",
+                            fontSize: 13,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {r.criadoPorUsername ?? "—"}
+                        </td>
+                      )}
                       <td style={{ padding: 10 }}>
                         <button
                           onClick={() => removeRow(realIdx)}
@@ -540,7 +555,7 @@ export default function Chamados() {
 
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={9} style={{ padding: 18, color: "#9399a2" }}>
+                    <td colSpan={isAdmin ? 10 : 9} style={{ padding: 18, color: "#9399a2" }}>
                       Nenhum registro encontrado.
                     </td>
                   </tr>

@@ -5,6 +5,7 @@ import pool from "./db.js";
 import authRoutes from "./routes/auth.js";
 import chamadosRoutes from "./routes/chamados.js";
 import usuariosRoutes from "./routes/usuarios.js";
+import auditoriaRoutes from "./routes/auditoria.js";
 import { requireAuth, requireAdmin } from "./auth.js";
 
 const app = express();
@@ -46,6 +47,9 @@ app.get("/api/me", requireAuth, (req, res) => res.json({ user: req.user }));
 
 // Rotas de gestão de usuários (admin-only)
 app.use("/api/usuarios", requireAuth, requireAdmin, usuariosRoutes);
+
+// Rota de auditoria/log (admin-only)
+app.use("/api/auditoria", requireAuth, requireAdmin, auditoriaRoutes);
 
 const PORT = Number(process.env.PORT) || 3001;
 app.listen(PORT, () => {

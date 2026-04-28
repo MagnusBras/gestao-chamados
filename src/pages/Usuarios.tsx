@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "../auth";
 import {
   usuariosApi,
   type Usuario,
   type Papel,
 } from "../api/usuarios";
+import { auditoriaApi, type EventoAuditoria } from "../api/auditoria";
 import { HttpError } from "../api/client";
 import PasswordInput from "../components/PasswordInput";
 
@@ -26,6 +27,12 @@ export default function Usuarios() {
   const [resetPassword, setResetPassword] = useState("");
   const [resetting, setResetting] = useState(false);
 
+  // Log de auditoria
+  const [eventos, setEventos] = useState<EventoAuditoria[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+  const [auditRefresh, setAuditRefresh] = useState(0);
+  const bumpAudit = useCallback(() => setAuditRefresh((k) => k + 1), []);
+
   function loadUsers() {
     if (!token) return;
     setLoading(true);
@@ -45,6 +52,28 @@ export default function Usuarios() {
     loadUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // Carrega o log de auditoria sempre que o token muda OU bumpAudit é chamado
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setLoadingAudit(true);
+    auditoriaApi
+      .list(token, { limit: 100 })
+      .then((data) => {
+        if (!cancelled) setEventos(data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("[auditoria] falha ao carregar:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAudit(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, auditRefresh]);
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -66,6 +95,7 @@ export default function Usuarios() {
       setNewNome("");
       setNewPassword("");
       setNewPapel("user");
+      bumpAudit();
     } catch (err) {
       const msg =
         err instanceof HttpError ? err.payload.error : "Erro ao criar usuário";
@@ -82,6 +112,7 @@ export default function Usuarios() {
     try {
       const updated = await usuariosApi.update(u.id, { papel: novoPapel }, token);
       setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)));
+      bumpAudit();
     } catch (err) {
       const msg =
         err instanceof HttpError ? err.payload.error : "Erro ao atualizar";
@@ -95,6 +126,7 @@ export default function Usuarios() {
     try {
       const updated = await usuariosApi.update(u.id, { ativo: !u.ativo }, token);
       setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)));
+      bumpAudit();
     } catch (err) {
       const msg =
         err instanceof HttpError ? err.payload.error : "Erro ao atualizar";
@@ -109,6 +141,7 @@ export default function Usuarios() {
     try {
       await usuariosApi.remove(u.id, token);
       setUsers((prev) => prev.filter((x) => x.id !== u.id));
+      bumpAudit();
     } catch (err) {
       const msg =
         err instanceof HttpError ? err.payload.error : "Erro ao excluir";
@@ -125,6 +158,7 @@ export default function Usuarios() {
       await usuariosApi.setPassword(resetForId, resetPassword, token);
       setResetForId(null);
       setResetPassword("");
+      bumpAudit();
       alert("Senha redefinida com sucesso.");
     } catch (err) {
       const msg =
@@ -285,7 +319,7 @@ export default function Usuarios() {
                       </Tag>
                     </td>
                     <td style={{ padding: 10, color: "#9ca3af", fontSize: 12 }}>
-                      {u.ultimoLogin ?? "nunca"}
+                      {u.ultimoLogin ? formatDateTime(u.ultimoLogin) : "nunca"}
                     </td>
                     <td style={{ padding: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <ActionBtn
@@ -334,6 +368,13 @@ export default function Usuarios() {
           </table>
         </div>
       </div>
+
+      {/* Log de auditoria */}
+      <AuditoriaSection
+        eventos={eventos}
+        loading={loadingAudit}
+        onRefresh={bumpAudit}
+      />
 
       {/* Modal de redefinir senha */}
       {resetForId !== null && (
@@ -509,3 +550,220 @@ const btnSecondaryStyle: React.CSSProperties = {
   fontWeight: 700,
   cursor: "pointer",
 };
+
+// ============================================================================
+// Seção de auditoria/log
+// ============================================================================
+
+function AuditoriaSection({
+  eventos,
+  loading,
+  onRefresh,
+}: {
+  eventos: EventoAuditoria[];
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <div style={{ ...glassPanel(), overflow: "hidden" }}>
+      <div
+        style={{
+          background:
+            "linear-gradient(90deg, rgba(255, 117, 4, 0.92), rgb(192, 179, 11), rgba(255, 117, 4, 0.92))",
+          padding: 14,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+        }}
+      >
+        <div style={{ fontWeight: 900, fontSize: 22, flex: 1, textAlign: "center" }}>
+          Auditoria / Histórico de Ações
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          title="Recarregar"
+          style={{
+            background: "rgba(2,6,23,0.55)",
+            border: "1px solid rgba(75,85,99,0.35)",
+            color: "#e5e7eb",
+            padding: "8px 12px",
+            borderRadius: 10,
+            fontWeight: 700,
+            fontSize: 12,
+            cursor: loading ? "wait" : "pointer",
+            whiteSpace: "nowrap",
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          {loading ? "Atualizando..." : "↻ Atualizar"}
+        </button>
+      </div>
+      <div style={{ overflowX: "auto", maxHeight: 480, overflowY: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+            <tr style={{ background: "rgba(2,6,23,0.85)", color: "#cbd5e1" }}>
+              {["DATA/HORA", "USUÁRIO", "AÇÃO", "RECURSO", "DETALHES", "IP"].map(
+                (h) => (
+                  <th
+                    key={h}
+                    style={{
+                      textAlign: "left",
+                      padding: "10px 12px",
+                      fontSize: 11,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {h}
+                  </th>
+                )
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {eventos.map((e) => (
+              <tr
+                key={e.id}
+                style={{ borderTop: "1px solid rgba(75,85,99,0.25)" }}
+              >
+                <td
+                  style={{
+                    padding: 10,
+                    fontSize: 12,
+                    color: "#cbd5e1",
+                    whiteSpace: "nowrap",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {formatDateTime(e.ts)}
+                </td>
+                <td style={{ padding: 10, fontSize: 13 }}>
+                  {e.usuarioUsername ?? <span style={{ color: "#9ca3af" }}>—</span>}
+                </td>
+                <td style={{ padding: 10 }}>
+                  <AcaoBadge acao={e.acao} />
+                </td>
+                <td
+                  style={{
+                    padding: 10,
+                    fontSize: 12,
+                    color: "#cbd5e1",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {e.recurso
+                    ? `${e.recurso}${e.recursoId != null ? ` #${e.recursoId}` : ""}`
+                    : "—"}
+                </td>
+                <td
+                  style={{
+                    padding: 10,
+                    fontSize: 11,
+                    color: "#cbd5e1",
+                    maxWidth: 360,
+                  }}
+                >
+                  <DetalhesPreview detalhes={e.detalhes} />
+                </td>
+                <td
+                  style={{
+                    padding: 10,
+                    fontSize: 11,
+                    color: "#9ca3af",
+                    whiteSpace: "nowrap",
+                    fontFamily: "monospace",
+                  }}
+                >
+                  {e.ip ?? "—"}
+                </td>
+              </tr>
+            ))}
+            {eventos.length === 0 && !loading && (
+              <tr>
+                <td colSpan={6} style={{ padding: 18, color: "#9399a2" }}>
+                  Nenhum evento registrado ainda.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AcaoBadge({ acao }: { acao: string }) {
+  const colors: Record<string, string> = {
+    AUTH_LOGIN_OK: "#86efac",
+    AUTH_LOGIN_FALHA: "#fca5a5",
+    CHAMADO_CRIAR: "#93c5fd",
+    CHAMADO_EDITAR: "#fcd34d",
+    CHAMADO_EXCLUIR: "#fca5a5",
+    USUARIO_CRIAR: "#93c5fd",
+    USUARIO_EDITAR: "#fcd34d",
+    USUARIO_EXCLUIR: "#fca5a5",
+    USUARIO_SENHA_REDEFINIR: "#c4b5fd",
+  };
+  const color = colors[acao] ?? "#cbd5e1";
+  return (
+    <span
+      style={{
+        background: "rgba(0,0,0,0.25)",
+        border: `1px solid ${color}55`,
+        color,
+        padding: "2px 8px",
+        borderRadius: 999,
+        fontSize: 10,
+        fontWeight: 800,
+        whiteSpace: "nowrap",
+        fontFamily: "monospace",
+      }}
+    >
+      {acao}
+    </span>
+  );
+}
+
+function DetalhesPreview({ detalhes }: { detalhes: unknown }) {
+  if (detalhes == null) return <span style={{ color: "#9ca3af" }}>—</span>;
+  const text =
+    typeof detalhes === "string"
+      ? detalhes
+      : JSON.stringify(detalhes);
+  const isLong = text.length > 80;
+  return (
+    <span
+      title={text}
+      style={{
+        display: "inline-block",
+        maxWidth: 360,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        cursor: isLong ? "help" : "default",
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+// MySQL DATETIME chega como "2026-04-28 01:48:00" e está SEMPRE em UTC.
+// Convertemos para o horário local do navegador, formatado em pt-BR.
+function formatDateTime(s: string | null | undefined): string {
+  if (!s) return "";
+  // Garante formato ISO 8601 com "Z" (UTC) para o Date interpretar corretamente
+  const isoUtc = s.includes("T") ? s : s.replace(" ", "T");
+  const withZ = /[zZ]|[+-]\d{2}:?\d{2}$/.test(isoUtc) ? isoUtc : isoUtc + "Z";
+  const d = new Date(withZ);
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
