@@ -1,0 +1,47 @@
+# =============================================================================
+# docker-compose.yml — orquestração de 1 container
+#
+# Pré-requisitos no servidor:
+#   - Docker instalado
+#   - Arquivo server/.env preenchido (com credenciais do MySQL e JWT_SECRET)
+#   - O servidor consegue alcançar 10.0.20.200:3340
+#
+# Como subir:
+#   docker compose up -d --build
+#
+# Como ver os logs:
+#   docker compose logs -f
+#
+# Como parar:
+#   docker compose down
+#
+# Como atualizar (depois de git pull):
+#   docker compose up -d --build
+# =============================================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gestao-chamados:latest
+    container_name: gestao-chamados
+    restart: unless-stopped
+    ports:
+      # host:container — muda o lado esquerdo se 3001 já estiver em uso no servidor
+      - "3001:3001"
+    env_file:
+      # Variáveis de ambiente do backend (DB_*, JWT_SECRET, etc.)
+      # IMPORTANTE: este arquivo NÃO deve estar versionado no git.
+      - server/.env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      # FRONTEND_DIST já vem definido no Dockerfile
+    # Health check opcional: docker reinicia o container se a API ficar fora do ar
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

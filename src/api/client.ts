@@ -1,6 +1,10 @@
 // Camada genérica de chamadas HTTP para a API.
 // Todas as funções de domínio (auth, chamados, usuarios) chamam isto.
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+//
+// Quando VITE_API_URL está definido (dev local), usa essa URL absoluta.
+// Quando NÃO está definido (produção Docker), usa URL relativa — assume
+// que API e frontend são servidos pela mesma origem (mesmo host:porta).
+const BASE_URL = import.meta.env.VITE_API_URL ?? "";
 
 export type ApiError = {
   error: string;

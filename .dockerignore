@@ -1,0 +1,43 @@
+# =============================================================================
+# Arquivos/pastas que NÃO devem entrar no contexto do build do Docker.
+# Reduz o tamanho da imagem e evita vazar credenciais.
+# =============================================================================
+
+# Dependências instaladas (serão reinstaladas dentro do container)
+node_modules
+**/node_modules
+
+# Builds locais
+dist
+**/dist
+
+# Variáveis de ambiente (credenciais!) — passar via --env-file no run
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Editor / IDE
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# Documentação que não precisa ir
+README.md
+*.md
